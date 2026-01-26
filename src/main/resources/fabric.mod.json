@@ -17,6 +17,9 @@
       "com.everest.transmutated.Transmutated"
     ]
   },
+  "mixins": [
+    "transmutated.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=${loader_version}",
     "fabric-api": "*",

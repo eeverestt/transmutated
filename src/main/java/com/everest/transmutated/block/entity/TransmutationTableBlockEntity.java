@@ -3,6 +3,7 @@ package com.everest.transmutated.block.entity;
 import com.everest.transmutated.client.screen.TransmutationTableScreenHandler;
 import com.everest.transmutated.init.TransmutatedBlockEntities;
 import com.everest.transmutated.init.TransmutationRecipes;
+import com.everest.transmutated.mixin.XpAccessor;
 import com.everest.transmutated.recipe.TransmutationRecipe;
 import com.everest.transmutated.util.ImplementedInventory;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
@@ -38,8 +39,7 @@ public class TransmutationTableBlockEntity extends BlockEntity
     private static final int INPUT_SLOT = 0;
     private static final int OUTPUT_SLOT = 1;
 
-    private final DefaultedList<ItemStack> inventory =
-            DefaultedList.ofSize(2, ItemStack.EMPTY);
+    private final DefaultedList<ItemStack> inventory = DefaultedList.ofSize(2, ItemStack.EMPTY);
 
     private int progress = 0;
     private int maxProgress = 72;
@@ -81,18 +81,17 @@ public class TransmutationTableBlockEntity extends BlockEntity
         };
     }
 
-    public static void tick(World world, BlockPos pos, BlockState state, TransmutationTableBlockEntity be) {
+    public static void tick(World world, BlockPos pos, BlockState state, TransmutationTableBlockEntity be, @Nullable PlayerEntity player) {
         if (world.isClient) return;
 
-        be.updateAvailableRecipes();
+        be.updateAvailableRecipes(player);
 
-        if (be.hasRecipe()) {
+        if (player != null && be.hasRecipe(player)) {
             be.progress++;
-
             if (be.progress >= be.maxProgress) {
-                be.craftItem();
+                be.craftItem(player);
                 be.progress = 0;
-                be.updateAvailableRecipes();
+                be.updateAvailableRecipes(player);
             }
         } else {
             be.progress = 0;
@@ -101,12 +100,13 @@ public class TransmutationTableBlockEntity extends BlockEntity
         be.markDirty();
     }
 
-    private void updateAvailableRecipes() {
+
+    private void updateAvailableRecipes(PlayerEntity player) {
         if (world == null) return;
 
         ItemStack inputStack = getStack(INPUT_SLOT);
         if (inputStack.isEmpty()) {
-            availableRecipes = new ArrayList<>();
+            availableRecipes.clear();
             selectedRecipe = -1;
             updateOutputSlot();
             return;
@@ -118,10 +118,15 @@ public class TransmutationTableBlockEntity extends BlockEntity
                 world
         );
 
-        if (selectedRecipe >= availableRecipes.size()) {
+        // Only keep recipes if player has at least 1 XP
+        if (player == null || player.totalExperience <= 0) {
+            availableRecipes.clear();
             selectedRecipe = -1;
-            updateOutputSlot();
+        } else if (selectedRecipe >= availableRecipes.size()) {
+            selectedRecipe = -1;
         }
+
+        updateOutputSlot();
     }
 
     private void updateOutputSlot() {
@@ -135,32 +140,30 @@ public class TransmutationTableBlockEntity extends BlockEntity
         setStack(OUTPUT_SLOT, result);
     }
 
-    private boolean hasRecipe() {
-        if (world == null || selectedRecipe < 0 || selectedRecipe >= availableRecipes.size()) {
-            return false;
-        }
+    public boolean hasRecipe(PlayerEntity player) {
+        if (world == null || selectedRecipe < 0 || selectedRecipe >= availableRecipes.size()) return false;
 
         ItemStack input = getStack(INPUT_SLOT);
         if (input.isEmpty()) return false;
 
         RecipeEntry<TransmutationRecipe> recipe = availableRecipes.get(selectedRecipe);
-        if (!recipe.value().matches(new SingleStackRecipeInput(input), world)) {
-            return false;
-        }
+        if (!recipe.value().matches(new SingleStackRecipeInput(input), world)) return false;
 
         ItemStack result = recipe.value().getResult(world.getRegistryManager());
-        return canInsertItemIntoOutputSlot(result)
-                && canInsertAmountIntoOutputSlot(result.getCount());
+
+        if (player == null || player.totalExperience <= 0) return false;
+
+        return canInsertItemIntoOutputSlot(result) && canInsertAmountIntoOutputSlot(result.getCount());
     }
 
-    private void craftItem() {
-        if (world == null || selectedRecipe < 0 || selectedRecipe >= availableRecipes.size()) {
-            return;
-        }
+    public void craftItem(PlayerEntity player) {
+        if (world == null || selectedRecipe < 0 || selectedRecipe >= availableRecipes.size()) return;
+        if (player == null || player.totalExperience <= 0) return;
 
         RecipeEntry<TransmutationRecipe> recipe = availableRecipes.get(selectedRecipe);
         ItemStack result = recipe.value().getResult(world.getRegistryManager()).copy();
 
+        removeOneXP(player);
         removeStack(INPUT_SLOT, 1);
 
         ItemStack output = getStack(OUTPUT_SLOT);
@@ -169,6 +172,34 @@ public class TransmutationTableBlockEntity extends BlockEntity
         } else {
             output.increment(result.getCount());
         }
+    }
+
+    private void removeOneXP(PlayerEntity player) {
+        if (player.totalExperience <= 0) return;
+
+        int xpToRemove = 1;
+
+        while (xpToRemove > 0) {
+            int xpInCurrentLevel = ((XpAccessor) player).invokeGetXpToDrop();
+            float progressXP = player.experienceProgress * xpInCurrentLevel;
+
+            if (progressXP >= xpToRemove) {
+                player.experienceProgress = (progressXP - xpToRemove) / xpInCurrentLevel;
+                xpToRemove = 0;
+            } else {
+                xpToRemove -= progressXP;
+                if (player.experienceLevel > 0) {
+                    player.experienceLevel--;
+                    player.experienceProgress = 1.0F;
+                } else {
+                    player.experienceProgress = 0;
+                    xpToRemove = 0;
+                }
+            }
+        }
+
+        player.totalExperience = Math.max(player.totalExperience - 1, 0);
+        player.sendAbilitiesUpdate();
     }
 
     private boolean canInsertItemIntoOutputSlot(ItemStack stack) {

@@ -74,6 +74,18 @@ public class TransmutationTable extends BlockWithEntity implements BlockEntityPr
         }
 
         return validateTicker(type, TransmutatedBlockEntities.TRANSMUTATION_TABLE_BE,
-                (world1, pos, state1, blockEntity) -> blockEntity.tick(world1, pos, state1, blockEntity));
+                (world1, pos, state1, blockEntity) -> {
+                    if (!(blockEntity instanceof TransmutationTableBlockEntity table)) return;
+
+                    PlayerEntity player = world1.getClosestPlayer(
+                            pos.getX() + 0.5,
+                            pos.getY() + 0.5,
+                            pos.getZ() + 0.5,
+                            5,
+                            false
+                    );
+
+                    table.tick(world1, pos, state1, blockEntity, player);
+                });
     }
 }

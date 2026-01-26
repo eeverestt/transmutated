@@ -92,6 +92,11 @@ public class TransmutationTableScreenHandler extends ScreenHandler {
 
             @Override
             public void onTakeItem(PlayerEntity player, ItemStack stack) {
+                // Check if player has enough XP (except creative mode)
+                if (!player.isCreative() && player.totalExperience < 1) {
+                    return; // Don't allow taking the item if no XP
+                }
+
                 stack.onCraftByPlayer(player.getWorld(), player, stack.getCount());
                 TransmutationTableScreenHandler.this.output.unlockLastRecipe(
                         player,
@@ -118,7 +123,18 @@ public class TransmutationTableScreenHandler extends ScreenHandler {
                     }
                 });
 
+                // Remove 1 XP point from the player (except creative mode)
+                if (!player.isCreative()) {
+                    removeOneXP(player);
+                }
+
                 super.onTakeItem(player, stack);
+            }
+
+            @Override
+            public boolean canTakeItems(PlayerEntity playerEntity) {
+                // Allow taking items only if player has XP or is in creative mode
+                return playerEntity.isCreative() || playerEntity.totalExperience >= 1;
             }
         });
 
@@ -150,6 +166,62 @@ public class TransmutationTableScreenHandler extends ScreenHandler {
                         buf.readBlockPos()
                 )
         );
+    }
+
+    // XP removal method
+    private void removeOneXP(PlayerEntity player) {
+        if (player.totalExperience <= 0) return;
+
+        int currentXP = player.totalExperience;
+        int currentLevel = player.experienceLevel;
+        float currentProgress = player.experienceProgress;
+
+        // Remove 1 XP point
+        int xpToRemove = 1;
+
+        // If we have XP in the progress bar, remove from there first
+        if (currentProgress > 0 && currentLevel >= 0) {
+            int xpInCurrentLevel = player.getNextLevelExperience();
+            int xpInProgressBar = (int)(currentProgress * xpInCurrentLevel);
+
+            if (xpInProgressBar >= xpToRemove) {
+                // Enough in progress bar
+                player.experienceProgress = (float)(xpInProgressBar - xpToRemove) / xpInCurrentLevel;
+                player.totalExperience = Math.max(currentXP - xpToRemove, 0);
+            } else {
+                // Not enough in progress bar, need to level down
+                xpToRemove -= xpInProgressBar;
+                if (currentLevel > 0) {
+                    // Go down one level
+                    player.experienceLevel--;
+                    player.experienceProgress = 1.0f; // Full progress in previous level
+                    player.totalExperience = Math.max(currentXP - 1, 0);
+                    // Recursively remove remaining XP
+                    removeOneXP(player);
+                } else {
+                    // Level 0, no XP left
+                    player.experienceProgress = 0;
+                    player.totalExperience = 0;
+                }
+            }
+        } else if (currentLevel > 0) {
+            // No progress in current level, go down a level
+            player.experienceLevel--;
+            player.experienceProgress = 1.0f;
+            player.totalExperience = Math.max(currentXP - 1, 0);
+            // Recursively remove remaining XP
+            removeOneXP(player);
+        } else {
+            // No XP at all
+            player.totalExperience = 0;
+            player.experienceProgress = 0;
+        }
+
+        // Clamp values
+        if (player.totalExperience < 0) player.totalExperience = 0;
+        if (player.experienceLevel < 0) player.experienceLevel = 0;
+        if (player.experienceProgress < 0) player.experienceProgress = 0;
+        if (player.experienceProgress > 1) player.experienceProgress = 1;
     }
 
     public int getSelectedRecipe() {
