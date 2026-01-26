@@ -1,0 +1,9 @@
+{
+    "type": "transmutated:transmutation",
+    "ingredient": {
+        "item": "minecraft:jungle_sapling"
+    },
+    "result": {
+        "id": "minecraft:birch_sapling"
+    }
+}

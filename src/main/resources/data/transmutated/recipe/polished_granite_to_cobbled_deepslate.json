@@ -1,0 +1,9 @@
+{
+    "type": "transmutated:transmutation",
+    "ingredient": {
+        "item": "minecraft:polished_granite"
+    },
+    "result": {
+        "id": "minecraft:cobbled_deepslate"
+    }
+}

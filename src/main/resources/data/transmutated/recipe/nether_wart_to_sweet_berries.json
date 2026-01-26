@@ -1,0 +1,9 @@
+{
+    "type": "transmutated:transmutation",
+    "ingredient": {
+        "item": "minecraft:nether_wart"
+    },
+    "result": {
+        "id": "minecraft:sweet_berries"
+    }
+}

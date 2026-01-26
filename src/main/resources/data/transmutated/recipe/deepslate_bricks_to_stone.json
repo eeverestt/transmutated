@@ -1,0 +1,9 @@
+{
+    "type": "transmutated:transmutation",
+    "ingredient": {
+        "item": "minecraft:deepslate_bricks"
+    },
+    "result": {
+        "id": "minecraft:stone"
+    }
+}

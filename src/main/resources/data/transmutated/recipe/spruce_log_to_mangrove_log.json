@@ -1,0 +1,9 @@
+{
+    "type": "transmutated:transmutation",
+    "ingredient": {
+        "item": "minecraft:spruce_log"
+    },
+    "result": {
+        "id": "minecraft:mangrove_log"
+    }
+}

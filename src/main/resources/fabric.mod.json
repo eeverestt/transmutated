@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "transmutated",
+  "version": "${version}",
+  "name": "Transmutated",
+  "description": "go go transgender!",
+  "authors": [],
+  "contact": {},
+  "license": "unlicense",
+  "icon": "assets/transmutated/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "client": [
+      "com.everest.transmutated.client.TransmutatedClient"
+    ],
+    "main": [
+      "com.everest.transmutated.Transmutated"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}

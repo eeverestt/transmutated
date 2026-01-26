@@ -1,0 +1,9 @@
+{
+    "type": "transmutated:transmutation",
+    "ingredient": {
+        "item": "minecraft:carrot"
+    },
+    "result": {
+        "id": "minecraft:potato"
+    }
+}

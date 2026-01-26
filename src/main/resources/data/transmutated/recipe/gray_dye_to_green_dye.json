@@ -1,0 +1,9 @@
+{
+    "type": "transmutated:transmutation",
+    "ingredient": {
+        "item": "minecraft:gray_dye"
+    },
+    "result": {
+        "id": "minecraft:green_dye"
+    }
+}

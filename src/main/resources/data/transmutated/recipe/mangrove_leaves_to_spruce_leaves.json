@@ -1,0 +1,9 @@
+{
+    "type": "transmutated:transmutation",
+    "ingredient": {
+        "item": "minecraft:mangrove_leaves"
+    },
+    "result": {
+        "id": "minecraft:spruce_leaves"
+    }
+}

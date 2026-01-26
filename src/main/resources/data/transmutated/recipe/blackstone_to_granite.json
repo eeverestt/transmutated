@@ -1,0 +1,9 @@
+{
+    "type": "transmutated:transmutation",
+    "ingredient": {
+        "item": "minecraft:blackstone"
+    },
+    "result": {
+        "id": "minecraft:granite"
+    }
+}

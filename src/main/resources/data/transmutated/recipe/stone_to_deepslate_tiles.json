@@ -1,0 +1,9 @@
+{
+    "type": "transmutated:transmutation",
+    "ingredient": {
+        "item": "minecraft:stone"
+    },
+    "result": {
+        "id": "minecraft:deepslate_tiles"
+    }
+}

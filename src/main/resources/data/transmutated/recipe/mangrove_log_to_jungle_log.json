@@ -1,0 +1,9 @@
+{
+    "type": "transmutated:transmutation",
+    "ingredient": {
+        "item": "minecraft:mangrove_log"
+    },
+    "result": {
+        "id": "minecraft:jungle_log"
+    }
+}

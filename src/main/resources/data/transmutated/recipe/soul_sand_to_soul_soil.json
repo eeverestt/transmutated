@@ -1,0 +1,9 @@
+{
+    "type": "transmutated:transmutation",
+    "ingredient": {
+        "item": "minecraft:soul_sand"
+    },
+    "result": {
+        "id": "minecraft:soul_soil"
+    }
+}
