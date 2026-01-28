@@ -1,9 +1,0 @@
-{
-    "type": "transmutated:transmutation",
-    "ingredient": {
-        "item": "minecraft:light_blue_dye"
-    },
-    "result": {
-        "id": "minecraft:pink_dye"
-    }
-}

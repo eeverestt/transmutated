@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "transmutated:block/transmutation_table"
+    }
+  }
+}

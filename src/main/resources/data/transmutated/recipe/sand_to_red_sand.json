@@ -1,9 +1,0 @@
-{
-    "type": "transmutated:transmutation",
-    "ingredient": {
-        "item": "minecraft:sand"
-    },
-    "result": {
-        "id": "minecraft:red_sand"
-    }
-}

@@ -1,9 +1,0 @@
-{
-    "type": "transmutated:transmutation",
-    "ingredient": {
-        "item": "minecraft:birch_log"
-    },
-    "result": {
-        "id": "minecraft:acacia_log"
-    }
-}

@@ -1,9 +1,0 @@
-{
-    "type": "transmutated:transmutation",
-    "ingredient": {
-        "item": "minecraft:sweet_berries"
-    },
-    "result": {
-        "id": "minecraft:beetroot"
-    }
-}

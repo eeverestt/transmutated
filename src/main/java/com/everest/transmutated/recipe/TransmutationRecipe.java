@@ -3,41 +3,62 @@ package com.everest.transmutated.recipe;
 import com.everest.transmutated.init.TransmutationRecipes;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.recipe.Ingredient;
 import net.minecraft.recipe.Recipe;
 import net.minecraft.recipe.RecipeSerializer;
 import net.minecraft.recipe.RecipeType;
 import net.minecraft.recipe.input.SingleStackRecipeInput;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.RegistryWrapper;
+import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.registry.tag.TagKey;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.collection.DefaultedList;
 import net.minecraft.world.World;
 
-public record TransmutationRecipe(Ingredient ingredient, ItemStack result)
-        implements Recipe<SingleStackRecipeInput> {
+import java.util.List;
+
+public record TransmutationRecipe(
+        TagKey<Item> ingredientTag,
+        TagKey<Item> resultTag
+) implements Recipe<SingleStackRecipeInput> {
 
     @Override
     public boolean matches(SingleStackRecipeInput input, World world) {
-        return ingredient.test(input.item());
+        return input.item().isIn(ingredientTag);
     }
 
     @Override
     public ItemStack craft(SingleStackRecipeInput input, RegistryWrapper.WrapperLookup lookup) {
-        return result.copy();
-    }
-
-    @Override
-    public DefaultedList<Ingredient> getIngredients() {
-        DefaultedList<Ingredient> ingredients = DefaultedList.of();
-        ingredients.add(ingredient);
-        return ingredients;
+        // Get the first item from the result tag as a default
+        var items = lookup.getWrapperOrThrow(RegistryKeys.ITEM);
+        return items.getOptional(resultTag)
+                .flatMap(entries -> entries.stream().findFirst())
+                .map(entry -> new ItemStack(entry.value()))
+                .orElse(ItemStack.EMPTY);
     }
 
     @Override
     public ItemStack getResult(RegistryWrapper.WrapperLookup lookup) {
-        return result;
+        return craft(null, lookup);
+    }
+
+    public List<Item> getAllResults(RegistryWrapper.WrapperLookup lookup) {
+        RegistryWrapper<Item> items = lookup.getWrapperOrThrow(RegistryKeys.ITEM);
+        return items.getOptional(resultTag)
+                .stream()
+                .flatMap(entries -> entries.stream())
+                .map(RegistryEntry::value)
+                .toList();
+    }
+
+    @Override
+    public DefaultedList<net.minecraft.recipe.Ingredient> getIngredients() {
+        var ingredient = net.minecraft.recipe.Ingredient.fromTag(ingredientTag);
+        return DefaultedList.copyOf(ingredient);
     }
 
     @Override
@@ -55,30 +76,30 @@ public record TransmutationRecipe(Ingredient ingredient, ItemStack result)
         return true;
     }
 
-
     public static class Serializer implements RecipeSerializer<TransmutationRecipe> {
 
         public static final MapCodec<TransmutationRecipe> CODEC =
                 RecordCodecBuilder.mapCodec(inst -> inst.group(
-                        Ingredient.DISALLOW_EMPTY_CODEC.fieldOf("ingredient").forGetter(TransmutationRecipe::ingredient),
-                        ItemStack.CODEC.fieldOf("result").forGetter(TransmutationRecipe::result)
+                        Identifier.CODEC.fieldOf("ingredient")
+                                .xmap(id -> TagKey.of(RegistryKeys.ITEM, id), TagKey::id)
+                                .forGetter(TransmutationRecipe::ingredientTag),
+
+                        Identifier.CODEC.fieldOf("result")
+                                .xmap(id -> TagKey.of(RegistryKeys.ITEM, id), TagKey::id)
+                                .forGetter(TransmutationRecipe::resultTag)
                 ).apply(inst, TransmutationRecipe::new));
 
         public static final PacketCodec<RegistryByteBuf, TransmutationRecipe> PACKET_CODEC =
                 PacketCodec.tuple(
-                        Ingredient.PACKET_CODEC, TransmutationRecipe::ingredient,
-                        ItemStack.PACKET_CODEC, TransmutationRecipe::result,
-                        TransmutationRecipe::new
+                        Identifier.PACKET_CODEC, r -> r.ingredientTag().id(),
+                        Identifier.PACKET_CODEC, r -> r.resultTag().id(),
+                        (i, r) -> new TransmutationRecipe(
+                                TagKey.of(RegistryKeys.ITEM, i),
+                                TagKey.of(RegistryKeys.ITEM, r)
+                        )
                 );
 
-        @Override
-        public MapCodec<TransmutationRecipe> codec() {
-            return CODEC;
-        }
-
-        @Override
-        public PacketCodec<RegistryByteBuf, TransmutationRecipe> packetCodec() {
-            return PACKET_CODEC;
-        }
+        @Override public MapCodec<TransmutationRecipe> codec() { return CODEC; }
+        @Override public PacketCodec<RegistryByteBuf, TransmutationRecipe> packetCodec() { return PACKET_CODEC; }
     }
 }

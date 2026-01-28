@@ -1,9 +1,0 @@
-{
-    "type": "transmutated:transmutation",
-    "ingredient": {
-        "item": "minecraft:spruce_log"
-    },
-    "result": {
-        "id": "minecraft:dark_oak_log"
-    }
-}

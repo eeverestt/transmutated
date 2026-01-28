@@ -1,9 +1,0 @@
-{
-    "type": "transmutated:transmutation",
-    "ingredient": {
-        "item": "minecraft:acacia_leaves"
-    },
-    "result": {
-        "id": "minecraft:jungle_leaves"
-    }
-}

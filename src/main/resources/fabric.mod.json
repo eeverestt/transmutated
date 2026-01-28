@@ -4,7 +4,11 @@
   "version": "${version}",
   "name": "Transmutated",
   "description": "go go transgender!",
-  "authors": [],
+  "authors": [
+    "eeverest",
+    "KindlingCinder",
+    "CeasingBonsai"
+  ],
   "contact": {},
   "license": "unlicense",
   "icon": "assets/transmutated/icon.png",

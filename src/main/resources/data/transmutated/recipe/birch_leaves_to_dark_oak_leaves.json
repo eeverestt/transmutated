@@ -1,9 +1,0 @@
-{
-    "type": "transmutated:transmutation",
-    "ingredient": {
-        "item": "minecraft:birch_leaves"
-    },
-    "result": {
-        "id": "minecraft:dark_oak_leaves"
-    }
-}

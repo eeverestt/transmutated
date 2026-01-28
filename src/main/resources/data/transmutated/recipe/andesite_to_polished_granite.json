@@ -1,9 +1,0 @@
-{
-    "type": "transmutated:transmutation",
-    "ingredient": {
-        "item": "minecraft:andesite"
-    },
-    "result": {
-        "id": "minecraft:polished_granite"
-    }
-}

@@ -1,9 +1,0 @@
-{
-    "type": "transmutated:transmutation",
-    "ingredient": {
-        "item": "minecraft:acacia_log"
-    },
-    "result": {
-        "id": "minecraft:mangrove_log"
-    }
-}

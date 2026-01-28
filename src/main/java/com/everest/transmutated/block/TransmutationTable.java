@@ -3,29 +3,42 @@ package com.everest.transmutated.block;
 import com.everest.transmutated.block.entity.TransmutationTableBlockEntity;
 import com.everest.transmutated.init.TransmutatedBlockEntities;
 import com.mojang.serialization.MapCodec;
-import net.minecraft.block.BlockEntityProvider;
-import net.minecraft.block.BlockRenderType;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.BlockWithEntity;
+import net.minecraft.block.*;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.BlockEntityTicker;
 import net.minecraft.block.entity.BlockEntityType;
+import net.minecraft.block.entity.EnchantingTableBlockEntity;
+import net.minecraft.client.render.block.entity.EnchantingTableBlockEntityRenderer;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.screen.NamedScreenHandlerFactory;
+import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.ItemActionResult;
 import net.minecraft.util.ItemScatterer;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.shape.VoxelShape;
+import net.minecraft.world.BlockView;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
 public class TransmutationTable extends BlockWithEntity implements BlockEntityProvider {
     public static final MapCodec<TransmutationTable> CODEC = TransmutationTable.createCodec(TransmutationTable::new);
+    protected static final VoxelShape SHAPE = Block.createCuboidShape((double)0.0F, (double)0.0F, (double)0.0F, (double)16.0F, (double)12.0F, (double)16.0F);
 
     public TransmutationTable(Settings settings) {
         super(settings);
+    }
+
+    @Override
+    protected VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+        return SHAPE;
+    }
+
+    @Override
+    protected BlockRenderType getRenderType(BlockState state) {
+        return BlockRenderType.MODEL;
     }
 
     @Override
@@ -36,11 +49,6 @@ public class TransmutationTable extends BlockWithEntity implements BlockEntityPr
     @Override
     public @Nullable BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
         return new TransmutationTableBlockEntity(pos, state);
-    }
-
-    @Override
-    protected BlockRenderType getRenderType(BlockState state) {
-        return BlockRenderType.MODEL;
     }
 
     @Override
@@ -56,23 +64,19 @@ public class TransmutationTable extends BlockWithEntity implements BlockEntityPr
     }
 
     @Override
-    protected ItemActionResult onUseWithItem(ItemStack stack, BlockState state, World world, BlockPos pos, PlayerEntity player, Hand hand, BlockHitResult hit) {
+    public ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, BlockHitResult hit) {
         if (!world.isClient) {
-            NamedScreenHandlerFactory screenHandlerFactory = ((TransmutationTableBlockEntity) world.getBlockEntity(pos));
-            if (screenHandlerFactory != null) {
-                player.openHandledScreen(screenHandlerFactory);
+            BlockEntity blockEntity = world.getBlockEntity(pos);
+            if (blockEntity instanceof TransmutationTableBlockEntity) {
+                player.openHandledScreen((TransmutationTableBlockEntity) blockEntity);
             }
         }
-        return ItemActionResult.SUCCESS;
+        return ActionResult.SUCCESS;
     }
 
     @Nullable
     @Override
     public <T extends BlockEntity> BlockEntityTicker<T> getTicker(World world, BlockState state, BlockEntityType<T> type) {
-        if(world.isClient()) {
-            return null;
-        }
-
         return validateTicker(type, TransmutatedBlockEntities.TRANSMUTATION_TABLE_BE,
                 (world1, pos, state1, blockEntity) -> {
                     if (!(blockEntity instanceof TransmutationTableBlockEntity table)) return;

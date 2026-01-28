@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/enchanting_table",
+  "textures": {
+    "side": "transmutated:block/transmutation_table_side",
+    "top": "transmutated:block/transmutation_table_top",
+    "bottom": "transmutated:block/transmutation_table_bottom"
+  }
+}

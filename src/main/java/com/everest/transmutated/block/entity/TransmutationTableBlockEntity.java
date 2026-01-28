@@ -3,8 +3,8 @@ package com.everest.transmutated.block.entity;
 import com.everest.transmutated.client.screen.TransmutationTableScreenHandler;
 import com.everest.transmutated.init.TransmutatedBlockEntities;
 import com.everest.transmutated.init.TransmutationRecipes;
-import com.everest.transmutated.mixin.XpAccessor;
 import com.everest.transmutated.recipe.TransmutationRecipe;
+import com.everest.transmutated.recipe.VirtualTransmutationRecipe;
 import com.everest.transmutated.util.ImplementedInventory;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
 import net.minecraft.block.BlockState;
@@ -12,21 +12,22 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.inventory.Inventories;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.listener.ClientPlayPacketListener;
-import net.minecraft.network.packet.Packet;
-import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
+import net.minecraft.network.PacketByteBuf;
 import net.minecraft.recipe.RecipeEntry;
 import net.minecraft.recipe.input.SingleStackRecipeInput;
 import net.minecraft.registry.RegistryWrapper;
+import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.screen.PropertyDelegate;
 import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.ScreenHandlerContext;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.collection.DefaultedList;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.random.Random;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
@@ -36,77 +37,150 @@ import java.util.List;
 public class TransmutationTableBlockEntity extends BlockEntity
         implements ExtendedScreenHandlerFactory<BlockPos>, ImplementedInventory {
 
+    public int ticks;
+    public float nextPageAngle;
+    public float pageAngle;
+    public float flipRandom;
+    public float flipTurn;
+    public float nextPageTurningSpeed;
+    public float pageTurningSpeed;
+    public float bookRotation;
+    public float lastBookRotation;
+    public float targetBookRotation;
+    private static final Random RANDOM = Random.create();
+
     private static final int INPUT_SLOT = 0;
     private static final int OUTPUT_SLOT = 1;
 
-    private final DefaultedList<ItemStack> inventory = DefaultedList.ofSize(2, ItemStack.EMPTY);
+    private final DefaultedList<ItemStack> inventory =
+            DefaultedList.ofSize(2, ItemStack.EMPTY);
 
     private int progress = 0;
     private int maxProgress = 72;
     private int selectedRecipe = -1;
-    private List<RecipeEntry<TransmutationRecipe>> availableRecipes = new ArrayList<>();
 
-    private final PropertyDelegate propertyDelegate;
+    private List<RecipeEntry<TransmutationRecipe>> availableRecipes = new ArrayList<>();
+    private List<VirtualTransmutationRecipe> virtualRecipes = new ArrayList<>();
+
+    private final PropertyDelegate propertyDelegate = new PropertyDelegate() {
+        @Override
+        public int get(int index) {
+            return switch (index) {
+                case 0 -> progress;
+                case 1 -> maxProgress;
+                case 2 -> selectedRecipe;
+                default -> 0;
+            };
+        }
+
+        @Override
+        public void set(int index, int value) {
+            switch (index) {
+                case 0 -> progress = value;
+                case 1 -> maxProgress = value;
+                case 2 -> setSelectedRecipe(value);
+            }
+        }
+
+        @Override
+        public int size() {
+            return 3;
+        }
+    };
 
     public TransmutationTableBlockEntity(BlockPos pos, BlockState state) {
         super(TransmutatedBlockEntities.TRANSMUTATION_TABLE_BE, pos, state);
+    }
 
-        this.propertyDelegate = new PropertyDelegate() {
-            @Override
-            public int get(int index) {
-                return switch (index) {
-                    case 0 -> progress;
-                    case 1 -> maxProgress;
-                    case 2 -> selectedRecipe;
-                    default -> 0;
-                };
-            }
+//    @Override
+//    public void markDirty() {
+//        super.markDirty();
+//        if (world != null && !world.isClient) {
+//            world.updateListeners(pos, getCachedState(), getCachedState(), 3);
+//        }
+//    }
 
-            @Override
-            public void set(int index, int value) {
-                switch (index) {
-                    case 0 -> progress = value;
-                    case 1 -> maxProgress = value;
-                    case 2 -> {
-                        selectedRecipe = value;
-                        updateOutputSlot();
-                    }
-                }
-            }
-
-            @Override
-            public int size() {
-                return 3;
-            }
-        };
+    public void onInputChanged() {
+        ItemStack input = getStack(INPUT_SLOT);
+        if (input.isEmpty()) {
+            setSelectedRecipe(-1);
+            markDirty();
+        }
     }
 
     public static void tick(World world, BlockPos pos, BlockState state, TransmutationTableBlockEntity be, @Nullable PlayerEntity player) {
-        if (world.isClient) return;
+        be.pageTurningSpeed = be.nextPageTurningSpeed;
+        be.lastBookRotation = be.bookRotation;
+        PlayerEntity playerEntity = world.getClosestPlayer((double)pos.getX() + (double)0.5F, (double)pos.getY() + (double)0.5F, (double)pos.getZ() + (double)0.5F, (double)3.0F, false);
+        if (playerEntity != null) {
+            double d = playerEntity.getX() - ((double)pos.getX() + (double)0.5F);
+            double e = playerEntity.getZ() - ((double)pos.getZ() + (double)0.5F);
+            be.targetBookRotation = (float) MathHelper.atan2(e, d);
+            be.nextPageTurningSpeed += 0.1F;
+            if (be.nextPageTurningSpeed < 0.5F || RANDOM.nextInt(40) == 0) {
+                float f = be.flipRandom;
 
-        be.updateAvailableRecipes(player);
-
-        if (player != null && be.hasRecipe(player)) {
-            be.progress++;
-            if (be.progress >= be.maxProgress) {
-                be.craftItem(player);
-                be.progress = 0;
-                be.updateAvailableRecipes(player);
+                do {
+                    be.flipRandom += (float)(RANDOM.nextInt(4) - RANDOM.nextInt(4));
+                } while(f == be.flipRandom);
             }
         } else {
-            be.progress = 0;
+            be.targetBookRotation += 0.02F;
+            be.nextPageTurningSpeed -= 0.1F;
+        }
+
+        while(be.bookRotation >= (float)Math.PI) {
+            be.bookRotation -= ((float)Math.PI * 2F);
+        }
+
+        while(be.bookRotation < -(float)Math.PI) {
+            be.bookRotation += ((float)Math.PI * 2F);
+        }
+
+        while(be.targetBookRotation >= (float)Math.PI) {
+            be.targetBookRotation -= ((float)Math.PI * 2F);
+        }
+
+        while(be.targetBookRotation < -(float)Math.PI) {
+            be.targetBookRotation += ((float)Math.PI * 2F);
+        }
+
+        float g;
+        for(g = be.targetBookRotation - be.bookRotation; g >= (float)Math.PI; g -= ((float)Math.PI * 2F)) {
+        }
+
+        while(g < -(float)Math.PI) {
+            g += ((float)Math.PI * 2F);
+        }
+
+        be.bookRotation += g * 0.4F;
+        be.nextPageTurningSpeed = MathHelper.clamp(be.nextPageTurningSpeed, 0.0F, 1.0F);
+        ++be.ticks;
+        be.pageAngle = be.nextPageAngle;
+        float h = (be.flipRandom - be.nextPageAngle) * 0.4F;
+        float i = 0.2F;
+        h = MathHelper.clamp(h, -0.2F, 0.2F);
+        be.flipTurn += (h - be.flipTurn) * 0.9F;
+        be.nextPageAngle += be.flipTurn;
+
+        if (world.isClient) return;
+
+        be.updateAvailableRecipes();
+
+        if (be.hasRecipe()) {
+            be.updateAvailableRecipes();
         }
 
         be.markDirty();
     }
 
-
-    private void updateAvailableRecipes(PlayerEntity player) {
+    private void updateAvailableRecipes() {
         if (world == null) return;
 
-        ItemStack inputStack = getStack(INPUT_SLOT);
-        if (inputStack.isEmpty()) {
+        ItemStack input = getStack(INPUT_SLOT);
+        if (input.isEmpty()) {
             availableRecipes.clear();
+            virtualRecipes.clear();
             selectedRecipe = -1;
             updateOutputSlot();
             return;
@@ -114,15 +188,25 @@ public class TransmutationTableBlockEntity extends BlockEntity
 
         availableRecipes = world.getRecipeManager().getAllMatches(
                 TransmutationRecipes.TYPE,
-                new SingleStackRecipeInput(inputStack),
+                new SingleStackRecipeInput(input),
                 world
         );
 
-        // Only keep recipes if player has at least 1 XP
-        if (player == null || player.totalExperience <= 0) {
-            availableRecipes.clear();
-            selectedRecipe = -1;
-        } else if (selectedRecipe >= availableRecipes.size()) {
+        virtualRecipes.clear();
+        var items = world.getRegistryManager()
+                .getWrapperOrThrow(net.minecraft.registry.RegistryKeys.ITEM);
+
+        for (RecipeEntry<TransmutationRecipe> entry : availableRecipes) {
+            TransmutationRecipe recipe = entry.value();
+
+            items.getOptional(recipe.resultTag()).ifPresent(resultItems -> {
+                for (RegistryEntry<Item> itemEntry : resultItems) {
+                    virtualRecipes.add(new VirtualTransmutationRecipe(recipe, itemEntry.value()));
+                }
+            });
+        }
+
+        if (selectedRecipe < 0 || selectedRecipe >= availableRecipes.size()) {
             selectedRecipe = -1;
         }
 
@@ -135,71 +219,30 @@ public class TransmutationTableBlockEntity extends BlockEntity
             return;
         }
 
-        RecipeEntry<TransmutationRecipe> recipe = availableRecipes.get(selectedRecipe);
-        ItemStack result = recipe.value().getResult(world.getRegistryManager()).copy();
+        ItemStack result = availableRecipes
+                .get(selectedRecipe)
+                .value()
+                .getResult(world.getRegistryManager())
+                .copy();
+
         setStack(OUTPUT_SLOT, result);
     }
 
-    public boolean hasRecipe(PlayerEntity player) {
-        if (world == null || selectedRecipe < 0 || selectedRecipe >= availableRecipes.size()) return false;
+    private boolean hasRecipe() {
+        if (world == null || selectedRecipe < 0 || selectedRecipe >= availableRecipes.size()) {
+            return false;
+        }
 
         ItemStack input = getStack(INPUT_SLOT);
         if (input.isEmpty()) return false;
 
-        RecipeEntry<TransmutationRecipe> recipe = availableRecipes.get(selectedRecipe);
-        if (!recipe.value().matches(new SingleStackRecipeInput(input), world)) return false;
+        ItemStack result = availableRecipes
+                .get(selectedRecipe)
+                .value()
+                .getResult(world.getRegistryManager());
 
-        ItemStack result = recipe.value().getResult(world.getRegistryManager());
-
-        if (player == null || player.totalExperience <= 0) return false;
-
-        return canInsertItemIntoOutputSlot(result) && canInsertAmountIntoOutputSlot(result.getCount());
-    }
-
-    public void craftItem(PlayerEntity player) {
-        if (world == null || selectedRecipe < 0 || selectedRecipe >= availableRecipes.size()) return;
-        if (player == null || player.totalExperience <= 0) return;
-
-        RecipeEntry<TransmutationRecipe> recipe = availableRecipes.get(selectedRecipe);
-        ItemStack result = recipe.value().getResult(world.getRegistryManager()).copy();
-
-        removeOneXP(player);
-        removeStack(INPUT_SLOT, 1);
-
-        ItemStack output = getStack(OUTPUT_SLOT);
-        if (output.isEmpty()) {
-            setStack(OUTPUT_SLOT, result);
-        } else {
-            output.increment(result.getCount());
-        }
-    }
-
-    private void removeOneXP(PlayerEntity player) {
-        if (player.totalExperience <= 0) return;
-
-        int xpToRemove = 1;
-
-        while (xpToRemove > 0) {
-            int xpInCurrentLevel = ((XpAccessor) player).invokeGetXpToDrop();
-            float progressXP = player.experienceProgress * xpInCurrentLevel;
-
-            if (progressXP >= xpToRemove) {
-                player.experienceProgress = (progressXP - xpToRemove) / xpInCurrentLevel;
-                xpToRemove = 0;
-            } else {
-                xpToRemove -= progressXP;
-                if (player.experienceLevel > 0) {
-                    player.experienceLevel--;
-                    player.experienceProgress = 1.0F;
-                } else {
-                    player.experienceProgress = 0;
-                    xpToRemove = 0;
-                }
-            }
-        }
-
-        player.totalExperience = Math.max(player.totalExperience - 1, 0);
-        player.sendAbilitiesUpdate();
+        return canInsertItemIntoOutputSlot(result)
+                && canInsertAmountIntoOutputSlot(result.getCount());
     }
 
     private boolean canInsertItemIntoOutputSlot(ItemStack stack) {
@@ -209,78 +252,14 @@ public class TransmutationTableBlockEntity extends BlockEntity
 
     private boolean canInsertAmountIntoOutputSlot(int count) {
         ItemStack output = getStack(OUTPUT_SLOT);
-        int max = output.isEmpty() ? 64 : output.getMaxCount();
+        int max = output.isEmpty() ? output.getMaxCount() : output.getMaxCount();
         return output.getCount() + count <= max;
     }
 
-    public List<RecipeEntry<TransmutationRecipe>> getAvailableRecipes() {
-        return availableRecipes;
-    }
-
-    @Override
-    public Text getDisplayName() {
-        return Text.translatable("block.transmutated.transmutation_table");
-    }
-
-    @Override
-    public @Nullable ScreenHandler createMenu(
-            int syncId,
-            PlayerInventory playerInventory,
-            PlayerEntity player
-    ) {
-        return new TransmutationTableScreenHandler(
-                syncId,
-                playerInventory,
-                ScreenHandlerContext.create(world, pos)
-        );
-    }
-
-    @Override
-    public BlockPos getScreenOpeningData(ServerPlayerEntity player) {
-        return pos;
-    }
-
-    @Override
-    protected void writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup lookup) {
-        super.writeNbt(nbt, lookup);
-        Inventories.writeNbt(nbt, inventory, lookup);
-        nbt.putInt("Progress", progress);
-        nbt.putInt("MaxProgress", maxProgress);
-        nbt.putInt("SelectedRecipe", selectedRecipe);
-    }
-
-    @Override
-    protected void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup lookup) {
-        super.readNbt(nbt, lookup);
-        Inventories.readNbt(nbt, inventory, lookup);
-        progress = nbt.getInt("Progress");
-        maxProgress = nbt.getInt("MaxProgress");
-        selectedRecipe = nbt.getInt("SelectedRecipe");
-    }
-
-    @Override
-    public @Nullable Packet<ClientPlayPacketListener> toUpdatePacket() {
-        return BlockEntityUpdateS2CPacket.create(this);
-    }
-
-    @Override
-    public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup lookup) {
-        return createNbt(lookup);
-    }
-
-    @Override
-    public DefaultedList<ItemStack> getItems() {
-        return inventory;
-    }
-
-    public int getSelectedRecipe() {
-        return selectedRecipe;
-    }
-
-    public void setSelectedRecipe(int recipe) {
-        this.selectedRecipe = recipe;
-        this.updateOutputSlot();
-        this.markDirty();
+    public void setSelectedRecipe(int index) {
+        this.selectedRecipe = index;
+        updateOutputSlot();
+        markDirty();
     }
 
     public int getProgress() {
@@ -291,7 +270,52 @@ public class TransmutationTableBlockEntity extends BlockEntity
         return maxProgress;
     }
 
+    public int getSelectedRecipe() {
+        return selectedRecipe;
+    }
+
+    public List<VirtualTransmutationRecipe> getAvailableRecipes() {
+        return virtualRecipes;
+    }
+
     public PropertyDelegate getPropertyDelegate() {
         return propertyDelegate;
+    }
+
+    @Override
+    public BlockPos getScreenOpeningData(ServerPlayerEntity player) {
+        return pos;
+    }
+
+    @Override
+    public Text getDisplayName() {
+        return Text.translatable("block.transmutated.transmutation_table.title");
+    }
+
+    @Nullable
+    @Override
+    public ScreenHandler createMenu(int syncId, PlayerInventory playerInventory, PlayerEntity player) {
+        return new TransmutationTableScreenHandler(syncId, playerInventory, this.pos);
+    }
+
+    @Override
+    protected void writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup lookup) {
+        super.writeNbt(nbt, lookup);
+        Inventories.writeNbt(nbt, inventory, lookup);
+        nbt.putInt("Progress", progress);
+        nbt.putInt("SelectedRecipe", selectedRecipe);
+    }
+
+    @Override
+    protected void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup lookup) {
+        super.readNbt(nbt, lookup);
+        Inventories.readNbt(nbt, inventory, lookup);
+        progress = nbt.getInt("Progress");
+        selectedRecipe = nbt.getInt("SelectedRecipe");
+    }
+
+    @Override
+    public DefaultedList<ItemStack> getItems() {
+        return inventory;
     }
 }

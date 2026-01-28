@@ -1,22 +1,22 @@
 package com.everest.transmutated.client.screen;
 
-import com.everest.transmutated.client.init.TransmutatedScreenHandlers;
 import com.everest.transmutated.block.entity.TransmutationTableBlockEntity;
-import com.everest.transmutated.init.TransmutatedBlocks;
+import com.everest.transmutated.client.init.TransmutatedScreenHandlers;
 import com.everest.transmutated.init.TransmutationRecipes;
 import com.everest.transmutated.recipe.TransmutationRecipe;
+import com.everest.transmutated.recipe.VirtualTransmutationRecipe;
 import com.google.common.collect.Lists;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.CraftingResultInventory;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.recipe.RecipeEntry;
-import net.minecraft.recipe.RecipeType;
 import net.minecraft.recipe.input.SingleStackRecipeInput;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.screen.Property;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.ScreenHandlerContext;
@@ -29,88 +29,89 @@ import net.minecraft.world.World;
 import java.util.List;
 
 public class TransmutationTableScreenHandler extends ScreenHandler {
-    public static final int INPUT_ID = 0;
-    public static final int OUTPUT_ID = 1;
-    private static final int INVENTORY_START = 2;
-    private static final int INVENTORY_END = 29;
-    private static final int OUTPUT_START = 29;
-    private static final int OUTPUT_END = 38;
+
+    public static final int INPUT_SLOT = 0;
+    public static final int OUTPUT_SLOT = 1;
+    public static final int PLAYER_INVENTORY_START = 2;
+    public static final int PLAYER_HOTBAR_START = 29;
+    public static final int PLAYER_HOTBAR_END = 37;
 
     private final ScreenHandlerContext context;
-    private final Property selectedRecipe;
     private final World world;
-    private List<RecipeEntry<TransmutationRecipe>> availableRecipes;
-    private ItemStack inputStack;
-    long lastTakeTime;
-    final Slot inputSlot;
-    final Slot outputSlot;
-    Runnable contentsChangedListener;
-    public final Inventory input;
-    final CraftingResultInventory output;
+    private final Property selectedRecipe;
+
+    private Runnable contentsChangedListener = () -> {
+    };
+
+    private final Inventory inventory;
     private final TransmutationTableBlockEntity blockEntity;
 
-    public TransmutationTableScreenHandler(int syncId, PlayerInventory inventory, BlockPos pos) {
-        this(syncId, inventory, ScreenHandlerContext.create(inventory.player.getWorld(), pos));
+    private List<VirtualTransmutationRecipe> availableRecipes = Lists.newArrayList();
+    private ItemStack lastInput = ItemStack.EMPTY;
+    private long lastTakeTime;
+
+    public TransmutationTableScreenHandler(int syncId, PlayerInventory inv, BlockPos pos) {
+        this(syncId, inv, ScreenHandlerContext.create(inv.player.getWorld(), pos));
     }
 
-    public TransmutationTableScreenHandler(
-            int syncId,
-            PlayerInventory playerInventory,
-            final ScreenHandlerContext context
-    ) {
+    public TransmutationTableScreenHandler(int syncId, PlayerInventory inv, ScreenHandlerContext context) {
         super(TransmutatedScreenHandlers.TRANSMUTATION_TABLE_SCREEN_HANDLER, syncId);
-
         this.context = context;
-        this.world = playerInventory.player.getWorld();
+        this.world = inv.player.getWorld();
+        this.selectedRecipe = Property.create();
 
         this.blockEntity = context.get(
                 (world, pos) -> world.getBlockEntity(pos) instanceof TransmutationTableBlockEntity be ? be : null
         ).orElse(null);
 
-        this.selectedRecipe = Property.create();
-        this.availableRecipes = Lists.newArrayList();
-        this.inputStack = ItemStack.EMPTY;
-        this.contentsChangedListener = () -> {};
-
-        this.input = new SimpleInventory(1) {
+        this.inventory = new SimpleInventory(2) {
             @Override
             public void markDirty() {
                 super.markDirty();
-                TransmutationTableScreenHandler.this.onContentChanged(this);
-                TransmutationTableScreenHandler.this.contentsChangedListener.run();
+                onContentChanged(this);
+                contentsChangedListener.run();
             }
         };
-        this.output = new CraftingResultInventory();
 
-        this.inputSlot = this.addSlot(new Slot(this.input, 0, 20, 33));
+        this.addSlot(new Slot(inventory, INPUT_SLOT, 20, 33) {
+            @Override
+            public void onTakeItem(PlayerEntity player, ItemStack stack) {
+                super.onTakeItem(player, stack);
+                rebuildRecipes();
+            }
+        });
 
-        this.outputSlot = this.addSlot(new Slot(this.output, 1, 143, 33) {
+        this.addSlot(new Slot(inventory, OUTPUT_SLOT, 143, 33) {
             @Override
             public boolean canInsert(ItemStack stack) {
                 return false;
             }
 
             @Override
+            public boolean canTakeItems(PlayerEntity playerEntity) {
+                return hasStack() && canCraft();
+            }
+
+            @Override
             public void onTakeItem(PlayerEntity player, ItemStack stack) {
-                // Check if player has enough XP (except creative mode)
-                if (!player.isCreative() && player.totalExperience < 1) {
-                    return; // Don't allow taking the item if no XP
-                }
-
                 stack.onCraftByPlayer(player.getWorld(), player, stack.getCount());
-                TransmutationTableScreenHandler.this.output.unlockLastRecipe(
-                        player,
-                        List.of(TransmutationTableScreenHandler.this.inputSlot.getStack())
-                );
 
-                ItemStack itemStack = TransmutationTableScreenHandler.this.inputSlot.takeStack(1);
-                if (!itemStack.isEmpty()) {
-                    TransmutationTableScreenHandler.this.populateResult();
+                if (!world.isClient()) {
+                    int selected = selectedRecipe.get();
+                    if (selected >= 0 && selected < availableRecipes.size()) {
+                        ItemStack input = inventory.getStack(INPUT_SLOT);
+                        if (!input.isEmpty()) {
+                            input.decrement(1);
+                            if (input.isEmpty()) {
+                                inventory.setStack(INPUT_SLOT, ItemStack.EMPTY);
+                            }
+                        }
+                    }
                 }
 
                 context.run((world, pos) -> {
                     long time = world.getTime();
-                    if (TransmutationTableScreenHandler.this.lastTakeTime != time) {
+                    if (time != lastTakeTime) {
                         world.playSound(
                                 null,
                                 pos,
@@ -119,259 +120,229 @@ public class TransmutationTableScreenHandler extends ScreenHandler {
                                 1.0F,
                                 1.0F
                         );
-                        TransmutationTableScreenHandler.this.lastTakeTime = time;
+                        lastTakeTime = time;
+                    }
+
+                    if (blockEntity != null) {
+                        blockEntity.setSelectedRecipe(-1);
+                        blockEntity.markDirty();
                     }
                 });
 
-                // Remove 1 XP point from the player (except creative mode)
-                if (!player.isCreative()) {
-                    removeOneXP(player);
-                }
+                inventory.setStack(OUTPUT_SLOT, ItemStack.EMPTY);
+                selectedRecipe.set(-1);
+                rebuildRecipes();
 
+                sendContentUpdates();
                 super.onTakeItem(player, stack);
-            }
-
-            @Override
-            public boolean canTakeItems(PlayerEntity playerEntity) {
-                // Allow taking items only if player has XP or is in creative mode
-                return playerEntity.isCreative() || playerEntity.totalExperience >= 1;
             }
         });
 
         for (int i = 0; i < 3; ++i) {
             for (int j = 0; j < 9; ++j) {
-                this.addSlot(new Slot(playerInventory, j + i * 9 + 9,
-                        8 + j * 18, 84 + i * 18));
+                this.addSlot(new Slot(inv, j + i * 9 + 9, 8 + j * 18, 84 + i * 18));
             }
         }
 
         for (int i = 0; i < 9; ++i) {
-            this.addSlot(new Slot(playerInventory, i,
-                    8 + i * 18, 142));
+            this.addSlot(new Slot(inv, i, 8 + i * 18, 142));
         }
 
         this.addProperty(this.selectedRecipe);
     }
 
-    public TransmutationTableScreenHandler(
-            int syncId,
-            PlayerInventory playerInventory,
-            RegistryByteBuf buf
-    ) {
-        this(
-                syncId,
-                playerInventory,
-                ScreenHandlerContext.create(
-                        playerInventory.player.getWorld(),
-                        buf.readBlockPos()
-                )
-        );
+    @Override
+    public boolean canUse(PlayerEntity player) {
+        return blockEntity != null && !blockEntity.isRemoved();
     }
 
-    // XP removal method
-    private void removeOneXP(PlayerEntity player) {
-        if (player.totalExperience <= 0) return;
-
-        int currentXP = player.totalExperience;
-        int currentLevel = player.experienceLevel;
-        float currentProgress = player.experienceProgress;
-
-        // Remove 1 XP point
-        int xpToRemove = 1;
-
-        // If we have XP in the progress bar, remove from there first
-        if (currentProgress > 0 && currentLevel >= 0) {
-            int xpInCurrentLevel = player.getNextLevelExperience();
-            int xpInProgressBar = (int)(currentProgress * xpInCurrentLevel);
-
-            if (xpInProgressBar >= xpToRemove) {
-                // Enough in progress bar
-                player.experienceProgress = (float)(xpInProgressBar - xpToRemove) / xpInCurrentLevel;
-                player.totalExperience = Math.max(currentXP - xpToRemove, 0);
-            } else {
-                // Not enough in progress bar, need to level down
-                xpToRemove -= xpInProgressBar;
-                if (currentLevel > 0) {
-                    // Go down one level
-                    player.experienceLevel--;
-                    player.experienceProgress = 1.0f; // Full progress in previous level
-                    player.totalExperience = Math.max(currentXP - 1, 0);
-                    // Recursively remove remaining XP
-                    removeOneXP(player);
-                } else {
-                    // Level 0, no XP left
-                    player.experienceProgress = 0;
-                    player.totalExperience = 0;
-                }
-            }
-        } else if (currentLevel > 0) {
-            // No progress in current level, go down a level
-            player.experienceLevel--;
-            player.experienceProgress = 1.0f;
-            player.totalExperience = Math.max(currentXP - 1, 0);
-            // Recursively remove remaining XP
-            removeOneXP(player);
-        } else {
-            // No XP at all
-            player.totalExperience = 0;
-            player.experienceProgress = 0;
-        }
-
-        // Clamp values
-        if (player.totalExperience < 0) player.totalExperience = 0;
-        if (player.experienceLevel < 0) player.experienceLevel = 0;
-        if (player.experienceProgress < 0) player.experienceProgress = 0;
-        if (player.experienceProgress > 1) player.experienceProgress = 1;
+    public List<VirtualTransmutationRecipe> getAvailableRecipes() {
+        return availableRecipes;
     }
 
     public int getSelectedRecipe() {
-        return this.selectedRecipe.get();
+        return selectedRecipe.get();
     }
 
-    public List<RecipeEntry<TransmutationRecipe>> getAvailableRecipes() {
-        return this.availableRecipes;
-    }
-
-    public int getAvailableRecipeCount() {
-        return this.availableRecipes.size();
-    }
-
-    public boolean canCraft() {
-        return this.inputSlot.hasStack() && !this.availableRecipes.isEmpty();
+    public void setContentsChangedListener(Runnable listener) {
+        this.contentsChangedListener = listener;
     }
 
     @Override
-    public boolean canUse(PlayerEntity player) {
-        return canUse(this.context, player, TransmutatedBlocks.TRANSMUTATION_TABLE);
+    public void onClosed(PlayerEntity player) {
+        super.onClosed(player);
+
+        if (!player.isAlive() || player.isSpectator()) {
+            player.dropItem(this.inventory.removeStack(INPUT_SLOT), false);
+            player.dropItem(this.inventory.removeStack(OUTPUT_SLOT), false);
+        } else {
+            ItemStack inputStack = this.inventory.removeStack(INPUT_SLOT);
+            if (!inputStack.isEmpty()) {
+                if (!player.getInventory().insertStack(inputStack)) {
+                    player.dropItem(inputStack, false);
+                }
+            }
+
+            ItemStack outputStack = this.inventory.removeStack(OUTPUT_SLOT);
+            if (!outputStack.isEmpty()) {
+                if (!player.getInventory().insertStack(outputStack)) {
+                    player.dropItem(outputStack, false);
+                }
+            }
+        }
+
+        if (blockEntity != null) {
+            blockEntity.setSelectedRecipe(-1);
+            blockEntity.markDirty();
+        }
+
+        sendContentUpdates();
     }
 
+    @Override
     public boolean onButtonClick(PlayerEntity player, int id) {
-        if (this.isInBounds(id)) {
-            this.selectedRecipe.set(id);
-            if (this.blockEntity != null) {
-                this.blockEntity.setSelectedRecipe(id);
-            }
-            this.populateResult();
+        if (id < 0 || id >= availableRecipes.size()) return false;
+
+        selectedRecipe.set(id);
+        ItemStack result = getDisplayResult(id);
+        inventory.setStack(OUTPUT_SLOT, result.copy());
+
+        if (blockEntity != null) {
+            blockEntity.setSelectedRecipe(id);
+            blockEntity.markDirty();
         }
+
+        sendContentUpdates();
         return true;
     }
 
-    private boolean isInBounds(int id) {
-        return id >= 0 && id < this.availableRecipes.size();
+    @Override
+    public ItemStack quickMove(PlayerEntity player, int slotIndex) {
+        ItemStack originalStack = ItemStack.EMPTY;
+        Slot slot = this.slots.get(slotIndex);
+
+        if (slot != null && slot.hasStack()) {
+            ItemStack stackInSlot = slot.getStack();
+            originalStack = stackInSlot.copy();
+
+            if (slotIndex == OUTPUT_SLOT) {
+                if (!this.insertItem(stackInSlot, PLAYER_INVENTORY_START, PLAYER_HOTBAR_END + 1, true)) {
+                    return ItemStack.EMPTY;
+                }
+                slot.onQuickTransfer(stackInSlot, originalStack);
+            } else if (slotIndex == INPUT_SLOT) {
+                if (!this.insertItem(stackInSlot, PLAYER_INVENTORY_START, PLAYER_HOTBAR_END + 1, false)) {
+                    return ItemStack.EMPTY;
+                }
+            } else if (slotIndex >= PLAYER_INVENTORY_START && slotIndex <= PLAYER_HOTBAR_END) {
+                if (world.getRecipeManager()
+                        .getFirstMatch(TransmutationRecipes.TYPE,
+                                new SingleStackRecipeInput(stackInSlot),
+                                world).isPresent()) {
+                    if (!this.insertItem(stackInSlot, INPUT_SLOT, INPUT_SLOT + 1, false)) {
+                        return ItemStack.EMPTY;
+                    }
+                } else if (slotIndex < PLAYER_HOTBAR_START) {
+                    if (!this.insertItem(stackInSlot, PLAYER_HOTBAR_START, PLAYER_HOTBAR_END + 1, false)) {
+                        return ItemStack.EMPTY;
+                    }
+                } else {
+                    if (!this.insertItem(stackInSlot, PLAYER_INVENTORY_START, PLAYER_HOTBAR_START, false)) {
+                        return ItemStack.EMPTY;
+                    }
+                }
+            }
+
+            if (stackInSlot.isEmpty()) {
+                slot.setStack(ItemStack.EMPTY);
+            } else {
+                slot.markDirty();
+            }
+
+            if (stackInSlot.getCount() == originalStack.getCount()) {
+                return ItemStack.EMPTY;
+            }
+
+            slot.onTakeItem(player, stackInSlot);
+        }
+
+        return originalStack;
     }
 
     public void onContentChanged(Inventory inventory) {
-        ItemStack itemStack = this.inputSlot.getStack();
-        if (!itemStack.isOf(this.inputStack.getItem())) {
-            this.inputStack = itemStack.copy();
-            this.updateInput(inventory, itemStack);
+        ItemStack current = inventory.getStack(INPUT_SLOT);
+        if (!ItemStack.areEqual(current, lastInput)) {
+            lastInput = current.copy();
+            rebuildRecipes();
         }
     }
 
-    private static SingleStackRecipeInput createRecipeInput(Inventory inventory) {
-        return new SingleStackRecipeInput(inventory.getStack(0));
+    public boolean hasInput() {
+        return !inventory.getStack(INPUT_SLOT).isEmpty()
+                && !availableRecipes.isEmpty();
     }
 
-    private void updateInput(Inventory input, ItemStack stack) {
-        this.availableRecipes.clear();
-        this.selectedRecipe.set(-1);
-        this.outputSlot.setStackNoCallbacks(ItemStack.EMPTY);
-        if (this.blockEntity != null) {
-            this.blockEntity.setSelectedRecipe(-1);
+    public boolean canCraft() {
+        if (availableRecipes.isEmpty()) return false;
+
+        int index = selectedRecipe.get();
+        if (index < 0 || index >= availableRecipes.size()) return false;
+
+        ItemStack input = inventory.getStack(INPUT_SLOT);
+        if (input.isEmpty()) return false;
+
+        VirtualTransmutationRecipe recipe = availableRecipes.get(index);
+        return input.isIn(recipe.base().ingredientTag());
+    }
+
+    public int getAvailableRecipeCount() {
+        return availableRecipes.size();
+    }
+
+    private void rebuildRecipes() {
+        availableRecipes.clear();
+        selectedRecipe.set(-1);
+        inventory.setStack(OUTPUT_SLOT, ItemStack.EMPTY);
+
+        ItemStack input = inventory.getStack(INPUT_SLOT);
+        if (input.isEmpty()) {
+            sendContentUpdates();
+            return;
         }
 
-        if (!stack.isEmpty()) {
-            this.availableRecipes = this.world.getRecipeManager().getAllMatches(
-                    (RecipeType<TransmutationRecipe>) TransmutationRecipes.TYPE,
-                    createRecipeInput(input),
-                    this.world
-            );
-        }
-    }
+        var recipes = world.getRecipeManager().getAllMatches(
+                TransmutationRecipes.TYPE,
+                new SingleStackRecipeInput(input),
+                world
+        );
 
-    void populateResult() {
-        if (!this.availableRecipes.isEmpty() && this.isInBounds(this.selectedRecipe.get())) {
-            RecipeEntry<TransmutationRecipe> recipeEntry = this.availableRecipes.get(this.selectedRecipe.get());
-            ItemStack itemStack = recipeEntry.value().craft(createRecipeInput(this.input), this.world.getRegistryManager());
-            if (itemStack.isItemEnabled(this.world.getEnabledFeatures())) {
-                this.output.setLastRecipe(recipeEntry);
-                this.outputSlot.setStackNoCallbacks(itemStack);
-            } else {
-                this.outputSlot.setStackNoCallbacks(ItemStack.EMPTY);
-            }
-        } else {
-            this.outputSlot.setStackNoCallbacks(ItemStack.EMPTY);
-        }
-        this.sendContentUpdates();
-    }
+        var items = world.getRegistryManager()
+                .getWrapperOrThrow(RegistryKeys.ITEM);
 
-    public void setContentsChangedListener(Runnable contentsChangedListener) {
-        this.contentsChangedListener = contentsChangedListener;
-    }
-
-    public boolean canInsertIntoSlot(ItemStack stack, Slot slot) {
-        return slot.inventory != this.output && super.canInsertIntoSlot(stack, slot);
-    }
-
-    public ItemStack quickMove(PlayerEntity player, int slot) {
-        ItemStack itemStack = ItemStack.EMPTY;
-        Slot slot2 = this.slots.get(slot);
-        if (slot2 != null && slot2.hasStack()) {
-            ItemStack itemStack2 = slot2.getStack();
-            Item item = itemStack2.getItem();
-            itemStack = itemStack2.copy();
-            if (slot == 1) {
-                item.onCraftByPlayer(itemStack2, player.getWorld(), player);
-                if (!this.insertItem(itemStack2, 2, 38, true)) {
-                    return ItemStack.EMPTY;
+        for (RecipeEntry<TransmutationRecipe> entry : recipes) {
+            for (var itemEntry : items.streamEntries().toList()) {
+                Item item = itemEntry.value();
+                if (itemEntry.isIn(entry.value().resultTag())) {
+                    availableRecipes.add(
+                            new VirtualTransmutationRecipe(entry.value(), item)
+                    );
                 }
-                slot2.onQuickTransfer(itemStack2, itemStack);
-            } else if (slot == 0) {
-                if (!this.insertItem(itemStack2, 2, 38, false)) {
-                    return ItemStack.EMPTY;
-                }
-            } else if (this.world.getRecipeManager().getFirstMatch(
-                    (RecipeType<TransmutationRecipe>) TransmutationRecipes.TYPE,
-                    new SingleStackRecipeInput(itemStack2),
-                    this.world).isPresent()) {
-                if (!this.insertItem(itemStack2, 0, 1, false)) {
-                    return ItemStack.EMPTY;
-                }
-            } else if (slot >= 2 && slot < 29) {
-                if (!this.insertItem(itemStack2, 29, 38, false)) {
-                    return ItemStack.EMPTY;
-                }
-            } else if (slot >= 29 && slot < 38 && !this.insertItem(itemStack2, 2, 29, false)) {
-                return ItemStack.EMPTY;
             }
-
-            if (itemStack2.isEmpty()) {
-                slot2.setStack(ItemStack.EMPTY);
-            } else {
-                slot2.markDirty();
-            }
-
-            if (itemStack2.getCount() == itemStack.getCount()) {
-                return ItemStack.EMPTY;
-            }
-
-            slot2.onTakeItem(player, itemStack2);
-            this.sendContentUpdates();
         }
-        return itemStack;
+
+        sendContentUpdates();
     }
 
-    public void onClosed(PlayerEntity player) {
-        super.onClosed(player);
-        this.output.removeStack(1);
-        this.context.run((world, pos) -> this.dropInventory(player, this.input));
+    public ItemStack getDisplayResult(int index) {
+        if (index < 0 || index >= availableRecipes.size()) return ItemStack.EMPTY;
+        return new ItemStack(availableRecipes.get(index).result());
     }
 
-    public int getProgress() {
-        return this.blockEntity != null ? this.blockEntity.getProgress() : 0;
-    }
-
-    public int getMaxProgress() {
-        return this.blockEntity != null ? this.blockEntity.getMaxProgress() : 72;
+    @Override
+    public void sendContentUpdates() {
+        super.sendContentUpdates();
+        if (blockEntity != null) {
+            blockEntity.markDirty();
+        }
     }
 }

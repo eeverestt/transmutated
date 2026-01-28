@@ -1,9 +1,13 @@
 package com.everest.transmutated.client;
 
 import com.everest.transmutated.client.init.TransmutatedScreenHandlers;
+import com.everest.transmutated.client.render.TransmutationTableBlockEntityRenderer;
 import com.everest.transmutated.client.screen.TransmutationTableScreen;
+import com.everest.transmutated.init.TransmutatedBlockEntities;
+import com.everest.transmutated.init.TransmutatedBlocks;
 import net.fabricmc.api.ClientModInitializer;
 import net.minecraft.client.gui.screen.ingame.HandledScreens;
+import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
 
 public class TransmutatedClient implements ClientModInitializer {
 
@@ -13,5 +17,7 @@ public class TransmutatedClient implements ClientModInitializer {
                 TransmutatedScreenHandlers.TRANSMUTATION_TABLE_SCREEN_HANDLER,
                 TransmutationTableScreen::new
         );
+
+        BlockEntityRendererFactories.register(TransmutatedBlockEntities.TRANSMUTATION_TABLE_BE, TransmutationTableBlockEntityRenderer::new);
     }
 }

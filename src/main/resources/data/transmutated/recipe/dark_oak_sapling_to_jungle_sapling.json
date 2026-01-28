@@ -1,9 +1,0 @@
-{
-    "type": "transmutated:transmutation",
-    "ingredient": {
-        "item": "minecraft:dark_oak_sapling"
-    },
-    "result": {
-        "id": "minecraft:jungle_sapling"
-    }
-}
