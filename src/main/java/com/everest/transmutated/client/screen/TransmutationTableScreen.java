@@ -121,12 +121,16 @@ public class TransmutationTableScreen extends HandledScreen<TransmutationTableSc
                 double dy = mouseY - (y + (j / COLUMNS) * ENTRY_H);
 
                 if (dx >= 0 && dy >= 0 && dx < ENTRY_W && dy < ENTRY_H) {
-                    if (handler.onButtonClick(client.player, i)) {
-                        MinecraftClient.getInstance().getSoundManager().play(
-                                PositionedSoundInstance.master(
-                                        SoundEvents.UI_STONECUTTER_SELECT_RECIPE, 1.0F));
-                        return true;
-                    }
+                    this.client.interactionManager.clickButton(
+                            this.handler.syncId,
+                            i
+                    );
+                    MinecraftClient.getInstance().getSoundManager().play(
+                            PositionedSoundInstance.master(
+                                    SoundEvents.UI_STONECUTTER_SELECT_RECIPE, 1.0F
+                            )
+                    );
+                    return true;
                 }
             }
         }
