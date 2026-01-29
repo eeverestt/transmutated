@@ -119,7 +119,7 @@ public class TransmutationTableScreen extends HandledScreen<TransmutationTableSc
                 int j = i - scrollOffset;
                 double dx = mouseX - (x + (j % COLUMNS) * ENTRY_W);
                 double dy = mouseY - (y + (j / COLUMNS) * ENTRY_H);
-
+                //This was the part that was Bugging
                 if (dx >= 0 && dy >= 0 && dx < ENTRY_W && dy < ENTRY_H) {
                     this.client.interactionManager.clickButton(
                             this.handler.syncId,
