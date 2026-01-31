@@ -68,7 +68,6 @@ public class TransmutationTableScreen extends HandledScreen<TransmutationTableSc
         }
     }
 
-
     private void renderRecipeBackground(DrawContext ctx, int mouseX, int mouseY, int x, int y, int max) {
         hoveredRecipe = -1;
 
@@ -94,7 +93,6 @@ public class TransmutationTableScreen extends HandledScreen<TransmutationTableSc
         }
     }
 
-
     private void renderRecipeIcons(DrawContext ctx, int x, int y, int max) {
         for (int i = scrollOffset; i < max && i < handler.getAvailableRecipeCount(); i++) {
             int j = i - scrollOffset;
@@ -119,7 +117,6 @@ public class TransmutationTableScreen extends HandledScreen<TransmutationTableSc
                 int j = i - scrollOffset;
                 double dx = mouseX - (x + (j % COLUMNS) * ENTRY_W);
                 double dy = mouseY - (y + (j / COLUMNS) * ENTRY_H);
-                //This was the part that was Bugging
                 if (dx >= 0 && dy >= 0 && dx < ENTRY_W && dy < ENTRY_H) {
                     this.client.interactionManager.clickButton(
                             this.handler.syncId,
@@ -137,11 +134,9 @@ public class TransmutationTableScreen extends HandledScreen<TransmutationTableSc
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
-
     private boolean shouldScroll() {
         return hasInput && handler.getAvailableRecipeCount() > COLUMNS * ROWS;
     }
-
 
     private void onInventoryChange() {
         hasInput = handler.hasInput();

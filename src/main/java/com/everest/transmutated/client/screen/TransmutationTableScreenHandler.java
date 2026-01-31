@@ -89,7 +89,7 @@ public class TransmutationTableScreenHandler extends ScreenHandler {
 
             @Override
             public boolean canTakeItems(PlayerEntity playerEntity) {
-                return hasStack() && canCraft();
+                return hasStack() && canCraft() && playerEntity.experienceLevel >= 1;
             }
 
             @Override
@@ -100,13 +100,24 @@ public class TransmutationTableScreenHandler extends ScreenHandler {
                     int selected = selectedRecipe.get();
                     if (selected >= 0 && selected < availableRecipes.size()) {
                         ItemStack input = inventory.getStack(INPUT_SLOT);
-                        if (!input.isEmpty()) {
+                        if (!input.isEmpty() && player.totalExperience >= 1) {
                             input.decrement(1);
+                            player.addExperience(-1);
                             if (input.isEmpty()) {
                                 inventory.setStack(INPUT_SLOT, ItemStack.EMPTY);
                             }
+
+                            if (!input.isEmpty()) {
+                                ItemStack result = getDisplayResult(selected);
+                                inventory.setStack(OUTPUT_SLOT, result.copy());
+                            } else {
+                                inventory.setStack(OUTPUT_SLOT, ItemStack.EMPTY);
+                            }
                         }
                     }
+
+                    sendContentUpdates();
+                    super.onTakeItem(player, stack);
                 }
 
                 context.run((world, pos) -> {
@@ -124,17 +135,9 @@ public class TransmutationTableScreenHandler extends ScreenHandler {
                     }
 
                     if (blockEntity != null) {
-                        blockEntity.setSelectedRecipe(-1);
                         blockEntity.markDirty();
                     }
                 });
-
-                inventory.setStack(OUTPUT_SLOT, ItemStack.EMPTY);
-                selectedRecipe.set(-1);
-                rebuildRecipes();
-
-                sendContentUpdates();
-                super.onTakeItem(player, stack);
             }
         });
 
@@ -182,13 +185,6 @@ public class TransmutationTableScreenHandler extends ScreenHandler {
                     player.dropItem(inputStack, false);
                 }
             }
-
-            ItemStack outputStack = this.inventory.removeStack(OUTPUT_SLOT);
-            if (!outputStack.isEmpty()) {
-                if (!player.getInventory().insertStack(outputStack)) {
-                    player.dropItem(outputStack, false);
-                }
-            }
         }
 
         if (blockEntity != null) {
@@ -226,22 +222,45 @@ public class TransmutationTableScreenHandler extends ScreenHandler {
             originalStack = stackInSlot.copy();
 
             if (slotIndex == OUTPUT_SLOT) {
-                if (!this.insertItem(stackInSlot, PLAYER_INVENTORY_START, PLAYER_HOTBAR_END + 1, true)) {
+                if (!player.getInventory().insertStack(stackInSlot)) {
                     return ItemStack.EMPTY;
                 }
+
+                slot.onTakeItem(player, stackInSlot);
                 slot.onQuickTransfer(stackInSlot, originalStack);
+
+                slot.setStack(ItemStack.EMPTY);
+                return originalStack;
+
             } else if (slotIndex == INPUT_SLOT) {
                 if (!this.insertItem(stackInSlot, PLAYER_INVENTORY_START, PLAYER_HOTBAR_END + 1, false)) {
                     return ItemStack.EMPTY;
                 }
+
             } else if (slotIndex >= PLAYER_INVENTORY_START && slotIndex <= PLAYER_HOTBAR_END) {
-                if (world.getRecipeManager()
+
+                var recipeOpt = world.getRecipeManager()
                         .getFirstMatch(TransmutationRecipes.TYPE,
                                 new SingleStackRecipeInput(stackInSlot),
-                                world).isPresent()) {
-                    if (!this.insertItem(stackInSlot, INPUT_SLOT, INPUT_SLOT + 1, false)) {
+                                world);
+
+                if (recipeOpt.isPresent()) {
+                    int maxByStack = stackInSlot.getCount();
+                    int maxBySlot = this.slots.get(INPUT_SLOT).getMaxItemCount(stackInSlot);
+
+                    int moveCount = Math.min(maxByStack, maxBySlot);
+
+                    if (moveCount <= 0) return ItemStack.EMPTY;
+
+                    ItemStack moveStack = stackInSlot.copy();
+                    moveStack.setCount(moveCount);
+
+                    if (!this.insertItem(moveStack, INPUT_SLOT, INPUT_SLOT + 1, false)) {
                         return ItemStack.EMPTY;
                     }
+
+                    stackInSlot.decrement(moveCount);
+
                 } else if (slotIndex < PLAYER_HOTBAR_START) {
                     if (!this.insertItem(stackInSlot, PLAYER_HOTBAR_START, PLAYER_HOTBAR_END + 1, false)) {
                         return ItemStack.EMPTY;
