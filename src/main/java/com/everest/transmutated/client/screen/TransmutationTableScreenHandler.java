@@ -94,20 +94,12 @@ public class TransmutationTableScreenHandler extends ScreenHandler {
 
             @Override
             public void onTakeItem(PlayerEntity player, ItemStack stack) {
-                stack.onCraftByPlayer(player.getWorld(), player, stack.getCount());
-
-                if (!world.isClient()) {
-                    int selected = selectedRecipe.get();
-                    if (selected >= 0 && selected < availableRecipes.size()) {
-                        ItemStack input = inventory.getStack(INPUT_SLOT);
-                        if (!input.isEmpty()) {
-                            input.decrement(1);
-                            if (input.isEmpty()) {
-                                inventory.setStack(INPUT_SLOT, ItemStack.EMPTY);
-                            }
-                        }
-                    }
+                ItemStack input = inventory.getStack(INPUT_SLOT);
+                if (!input.isEmpty()) {
+                    input.decrement(1);
                 }
+
+                stack.onCraftByPlayer(player.getWorld(), player, stack.getCount());
 
                 context.run((world, pos) -> {
                     long time = world.getTime();
@@ -128,10 +120,6 @@ public class TransmutationTableScreenHandler extends ScreenHandler {
                         blockEntity.markDirty();
                     }
                 });
-
-                inventory.setStack(OUTPUT_SLOT, ItemStack.EMPTY);
-                selectedRecipe.set(-1);
-                rebuildRecipes();
 
                 sendContentUpdates();
                 super.onTakeItem(player, stack);
@@ -226,11 +214,48 @@ public class TransmutationTableScreenHandler extends ScreenHandler {
             originalStack = stackInSlot.copy();
 
             if (slotIndex == OUTPUT_SLOT) {
-                if (!this.insertItem(stackInSlot, PLAYER_INVENTORY_START, PLAYER_HOTBAR_END + 1, true)) {
-                    return ItemStack.EMPTY;
+                if (!canCraft()) return ItemStack.EMPTY;
+
+                int recipeIndex = selectedRecipe.get();
+                VirtualTransmutationRecipe recipe = availableRecipes.get(recipeIndex);
+
+                ItemStack input = inventory.getStack(INPUT_SLOT);
+                ItemStack result = new ItemStack(recipe.result());
+                //Changed this to make it actualy do the full stack and at the top fixed it to make it so it doesnt only give 1 item
+                while (!input.isEmpty() && input.isIn(recipe.base().ingredientTag())) {
+                    ItemStack toInsert = result.copy();
+
+                    if (!this.insertItem(
+                            toInsert,
+                            PLAYER_INVENTORY_START,
+                            PLAYER_HOTBAR_END + 1,
+                            true
+                    )) {
+                        break;
+                    }
+
+                    input.decrement(1);
+
+                    context.run((world, pos) -> {
+                        long time = world.getTime();
+                        if (time != lastTakeTime) {
+                            world.playSound(
+                                    null,
+                                    pos,
+                                    SoundEvents.UI_STONECUTTER_TAKE_RESULT,
+                                    SoundCategory.BLOCKS,
+                                    1.0F,
+                                    1.0F
+                            );
+                            lastTakeTime = time;
+                        }
+                    });
                 }
-                slot.onQuickTransfer(stackInSlot, originalStack);
-            } else if (slotIndex == INPUT_SLOT) {
+
+                rebuildRecipes();
+                return originalStack;
+            }
+            else if (slotIndex == INPUT_SLOT) {
                 if (!this.insertItem(stackInSlot, PLAYER_INVENTORY_START, PLAYER_HOTBAR_END + 1, false)) {
                     return ItemStack.EMPTY;
                 }
